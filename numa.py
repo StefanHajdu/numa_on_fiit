@@ -4,6 +4,7 @@ import pandas as pd
 import sympy as sp
 from scipy.optimize import curve_fit
 import scipy.integrate as sint
+from math import sqrt
 
 pd.set_option("display.precision", 16)
 
@@ -399,7 +400,7 @@ def fit_defined_curve(x, y, method='line'):
         plot_fitted_curve(x, y, parabola, **params)
         print(f'\nL2 error:\n{fitted_curve_error(x, y, parabola, **params)}')
     elif method == 'line':
-        popt, pcov = curve_fit(lambda x, a, b, c: a*x+b, x, y)
+        popt, pcov = curve_fit(lambda x, a, b: a*x+b, x, y)
         a = params['a'] = popt[0]
         b = params['b'] = popt[1]
         print(f'Parameters:\n{params}')
@@ -408,7 +409,6 @@ def fit_defined_curve(x, y, method='line'):
         print(f'\nL2 error:\n{fitted_curve_error(x, y, line, **params)}')
     else:
         print(f'{method} no defined')
-
 
 def all_integrals(f, a, b, h=0.1):
     """
@@ -481,3 +481,182 @@ def all_integrals(f, a, b, h=0.1):
     results.loc[5] = ['simpson_composite', x, err]
 
     print(results)
+
+def all_integrals_approx_err(f, a, b, f_sp, symbol, h=0.1):
+    """
+    Args:
+        f: lambda/function, funkcia, ktora sa bude ingrovat
+        a: float, spodna hranica integralu
+        b: float, horna hranica integralu
+        h: float, dlzka kroku pre zlozene metody
+    """
+    def derivation(f_sp, symbol, degree):
+        return f_sp.diff(symbol, degree)
+
+    def reference_integral(f, a, b):
+        x = np.linspace(a, b, 100)
+        integral = sint.trapz(f(x), x)
+        return integral
+
+    def trapz_simple(f, a, b):
+        exact = reference_integral(f, a, b)
+        h = (b-a)
+        approx = h/2 * (f(a) + f(b))
+        f_d = derivation(f_sp, symbol, 2)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = (h**3/12)*max_of_abs
+        return approx, abs(exact - approx), err_approx
+
+    def simpson_simple(f, a, b):
+        exact = reference_integral(f, a, b)
+        h = (b-a)/2
+        approx = h/3 * (f(a) + 4*f((a+b)/2) + f(b))
+        f_d = derivation(f_sp, symbol, 4)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = (h**5/90)*max_of_abs
+        return approx, abs(exact - approx), err_approx
+
+    def simpson_3_8_simple(f, a, b):
+        exact = reference_integral(f, a, b)
+        h = (b-a)/3
+        approx = 3*h/8 * (f(a) + 3*f(a+h) + 3*f(a+2*h) + f(b))
+        f_d = derivation(f_sp, symbol, 5)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = 3*h**5/(80*max_of_abs)
+        return approx, abs(exact - approx), err_approx
+
+    def boole_simple(f, a, b):
+        exact = reference_integral(f, a, b)
+        h = (b-a)/4
+        approx = 2*h/45 * (7*f(a) + 32*f(a + 1/4*(b-a)) + 12*f(a + 2/4*(b-a)) + 32*f(a+3/4*(b-a)) + 7*f(b))
+        f_d = derivation(f_sp, symbol, 6)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = (8*h**7/945)*max_of_abs
+        return approx, abs(exact - approx), err_approx
+
+    def trapz_composite(f, a, b, h=0.1):
+        exact = reference_integral(f, a, b)
+        x = np.arange(a, b, h)
+        y = f(x)
+        approx = (h/2) * (f(a) + 2*sum(y[1:]) + f(b))
+        f_d = derivation(f_sp, symbol, 2)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = ((b-a)*h**2/12)*max_of_abs
+        return approx, abs(exact - approx), err_approx
+
+    def simpson_composite(f, a, b, h=0.1):
+        exact = reference_integral(f, a, b)
+        x = np.arange(a, b, h)
+        y = f(x)
+        approx = (h/3) * (f(a) + 4*sum(y[1::2]) + 2*sum(y[2::2]) + f(b))
+        f_d = derivation(f_sp, symbol, 4)
+        max_of_abs = sqrt(sp.maximum(f_d**2, symbol, sp.Interval(a, b)))
+        err_approx = ((b-a)*h**4/180)*max_of_abs
+        return approx, abs(exact - approx), err_approx
+
+    print(f'Exact value (by scipy): {reference_integral(f, a, b)}\n')
+
+    results = pd.DataFrame({'metoda': pd.Series(dtype='int'),
+                    'approx': pd.Series(dtype='float'),
+                    '|exact - approx|': pd.Series(dtype='float'),
+                    'err_approx': pd.Series(dtype='float')})
+
+    x, err, err_approx = trapz_simple(f, a, b)
+    results.loc[0] = ['trapz_simple', x, err, err_approx]
+    x, err, err_approx = simpson_simple(f, a, b)
+    results.loc[1] = ['simpson_simple', x, err, err_approx]
+    x, err, err_approx = simpson_3_8_simple(f, a, b)
+    results.loc[2] = ['simpson_3_8_simple', x, err, err_approx]
+    x, err, err_approx = boole_simple(f, a, b)
+    results.loc[3] = ['boole_simple', x, err, err_approx]
+    x, err, err_approx = trapz_composite(f, a, b, h)
+    results.loc[4] = ['trapz_composite', x, err, err_approx]
+    x, err, err_approx = simpson_composite(f, a, b, h)
+    results.loc[5] = ['simpson_composite', x, err, err_approx]
+
+    print(results)
+
+def partial_matrices(A):
+    Diag = np.diag(np.diag(A))
+    U = np.triu(A) - Diag
+    L = np.tril(A) - Diag
+    return Diag, U, L
+
+def jaccobi_systems_method(A, b, r=20):
+    """
+    Args:
+        A: np.array/matrix, stvorcova, diagonalne dominantna matica
+        b: np.array/vektor, vektor pravych stran
+        r: int, pocet iteracii/opakovani algoritmu
+    """
+    Diag, U, L = partial_matrices(A)
+    H = -np.linalg.inv(Diag) @ (L+U)
+    g = np.linalg.inv(Diag) @ b
+    print(H)
+    print()
+    print(g)
+    print()
+
+    results = pd.DataFrame({'x(i)': pd.Series(dtype='str'),
+                            'err': pd.Series(dtype='float')})
+
+    x_vector_len = H.shape[0]
+    x_prev = np.zeros(x_vector_len)
+    for i in range(r):
+        x_next = H @ x_prev + g
+        err = abs(x_next[0]-x_prev[0])
+        x_prev = x_next
+        results.loc[i] = [str(x_next), err]
+    
+    print(results)
+    print()
+
+def gauss_seidl_systems_method(A, b, r=20):
+    """
+    Args:
+        A: np.array/matrix, stvorcova, diagonalne dominantna matica
+        b: np.array/vektor, vektor pravych stran
+        r: int, pocet iteracii/opakovani algoritmu
+    """
+    Diag, U, L = partial_matrices(A)
+    H = -np.linalg.inv(L+Diag) @ (U)
+    g = np.linalg.inv(L+Diag) @ b
+    print(H)
+    print()
+    print(g)
+    print()
+
+    results = pd.DataFrame({'x(i)': pd.Series(dtype='str'),
+                            'err': pd.Series(dtype='float')})
+
+    x_vector_len = H.shape[0]
+    x_prev = np.zeros(x_vector_len)
+    for i in range(r):
+        x_next = H @ x_prev + g
+        err = abs(x_next[0]-x_prev[0])
+        x_prev = x_next
+        results.loc[i] = [str(x_next), err]
+    
+    print(results)
+    print()
+
+def primitive_iterative_systems_method(H, g, r=20):
+    """
+    Args:
+        H: np.array/matrix, stvorcova, diagonalne dominantna matica po uprave
+        g: np.array/vektor, vektor pravych stran, po uprave
+        r: int, pocet iteracii/opakovani algoritmu
+    """
+    results = pd.DataFrame({'x(i)': pd.Series(dtype='str'),
+                            'err': pd.Series(dtype='float')})
+
+    x_vector_len = H.shape[0]
+    x_prev = np.zeros(x_vector_len)
+    for i in range(r):
+        x_next = H @ x_prev + g
+        err = abs(x_next[0]-x_prev[0])
+        x_prev = x_next
+        results.loc[i] = [str(x_next), err]
+    
+    print(results)
+    print()
